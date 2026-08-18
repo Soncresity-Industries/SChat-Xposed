@@ -1,11 +1,16 @@
-package io.github.pyoncord.xposed
+package dev.soncresityindustries.schat.xposed
 
+import android.R
 import android.app.AndroidAppHelper
 import android.content.Context
 import android.os.Build
 import androidx.core.content.ContextCompat
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 @Serializable
 data class SysColors(
@@ -16,7 +21,7 @@ data class SysColors(
     val accent3: List<String>
 )
 
-class SysColorsModule : PyonModule() {
+class SysColorsModule : SChatModule() {
     private lateinit var context: Context
     private fun isSupported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
@@ -33,7 +38,7 @@ class SysColorsModule : PyonModule() {
                         val colorName = "system_" + accent + "_" + shade
 
                         val colorResourceId = runCatching {
-                            android.R.color::class.java.getField(colorName).getInt(null)
+                            R.color::class.java.getField(colorName).getInt(null)
                         }.getOrElse { 0 }
 
                         add(convertToColor(colorResourceId))

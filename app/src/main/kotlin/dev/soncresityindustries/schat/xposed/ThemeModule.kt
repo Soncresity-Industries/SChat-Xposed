@@ -1,24 +1,25 @@
-package io.github.pyoncord.xposed
+package dev.soncresityindustries.schat.xposed
 
 import android.content.Context
-import android.graphics.Color
 import android.content.res.Resources
+import android.graphics.Color
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.put
 import java.io.File
-import kotlinx.serialization.json.*
 
 @Serializable
 data class Author(
     val name: String,
     val id: String? = null
 )
+
 @Serializable
 data class ThemeData(
     val name: String,
@@ -28,6 +29,7 @@ data class ThemeData(
     val semanticColors: Map<String, List<String>>? = null,
     val rawColors: Map<String, String>? = null
 )
+
 @Serializable
 data class Theme(
     val id: String,
@@ -35,7 +37,7 @@ data class Theme(
     val data: ThemeData
 )
 
-class ThemeModule : PyonModule() {
+class ThemeModule : SChatModule() {
     private lateinit var param: XC_LoadPackage.LoadPackageParam
 
     private var theme: Theme? = null
@@ -45,7 +47,7 @@ class ThemeModule : PyonModule() {
     override fun buildJson(builder: JsonObjectBuilder) {
         builder.apply {
             put("hasThemeSupport", true)
-            if (theme != null) 
+            if (theme != null)
                 put("storedTheme", Json.encodeToJsonElement<Theme>(theme!!))
             else
                 put("storedTheme", null)
@@ -60,15 +62,15 @@ class ThemeModule : PyonModule() {
 
     private fun File.isValidish(): Boolean {
         if (!this.exists()) return false
-        
+
         val text = this.readText()
         return text.isNotBlank() && text != "{}" && text != "null"
     }
 
     private fun getTheme(): Theme? {
         val filesDir = File(param.appInfo.dataDir, "files").apply { mkdirs() }
-        val pyonDir = File(filesDir, "pyoncord").apply { mkdirs() }
-        val themeFile = File(pyonDir, "current-theme.json")
+        val schatDir = File(filesDir, "schat").apply { mkdirs() }
+        val themeFile = File(schatDir, "current-theme.json")
 
         val legacyThemeFile = File(filesDir, "vendetta_theme.json")
         if (legacyThemeFile.isValidish() && !themeFile.isValidish()) {
@@ -76,11 +78,13 @@ class ThemeModule : PyonModule() {
         }
 
         if (!themeFile.isValidish()) return null
-        
+
         return try {
             val themeText = themeFile.readText()
             Json { ignoreUnknownKeys = true }.decodeFromString<Theme>(themeText)
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun hookTheme() {
@@ -92,14 +96,17 @@ class ThemeModule : PyonModule() {
         if (theme == null) return
 
         // Apply rawColors
-        theme.data.rawColors?.forEach { (key, value) -> 
+        theme.data.rawColors?.forEach { (key, value) ->
             rawColorMap[key.lowercase()] = hexStringToColorInt(value)
         }
-        
+
         // Apply semanticColors
         theme.data.semanticColors?.forEach { (key, value) ->
             // TEXT_NORMAL -> getTextNormal
-            val methodName = "get${key.split("_").joinToString("") { it.lowercase().replaceFirstChar { it.uppercase() } }}"
+            val methodName = "get${
+                key.split("_")
+                    .joinToString("") { it.lowercase().replaceFirstChar { it.uppercase() } }
+            }"
             value.forEachIndexed { index, v ->
                 when (index) {
                     0 -> hookThemeMethod(darkTheme, methodName, hexStringToColorInt(v))
@@ -140,7 +147,7 @@ class ThemeModule : PyonModule() {
 
     // Parse HEX colour string to INT. Takes "#RRGGBBAA" or "#RRGGBB"
     private fun hexStringToColorInt(hexString: String): Int {
-        return if (hexString.length == 9 ) {
+        return if (hexString.length == 9) {
             // Rearrange RRGGBBAA -> AARRGGBB so parseColor() is happy
             val alpha = hexString.substring(7, 9)
             val rrggbb = hexString.substring(1, 7)

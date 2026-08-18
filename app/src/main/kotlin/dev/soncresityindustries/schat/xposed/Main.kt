@@ -1,25 +1,34 @@
-package io.github.pyoncord.xposed
+package dev.soncresityindustries.schat.xposed
 
 import android.app.Activity
 import android.content.res.AssetManager
 import android.content.res.Resources
-import android.util.Log
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.statement.*
-import io.ktor.client.plugins.*
-import io.ktor.http.*
-import kotlinx.coroutines.*
-import kotlinx.serialization.*
-import kotlinx.serialization.json.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.RedirectResponseException
+import io.ktor.client.plugins.UserAgent
+import io.ktor.client.request.get
+import io.ktor.client.request.headers
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 
 @Serializable
@@ -34,7 +43,7 @@ data class LoaderConfig(
 )
 
 class Main : IXposedHookLoadPackage {
-    private val pyonModules: Array<PyonModule> = arrayOf(
+    private val schatModules: Array<SChatModule> = arrayOf(
         ThemeModule(),
         SysColorsModule(),
         FontsModule(),
@@ -43,10 +52,10 @@ class Main : IXposedHookLoadPackage {
 
     fun buildLoaderJsonString(): String {
         val obj = buildJsonObject {
-            put("loaderName", "BunnyXposed")
+            put("loaderName", "SChat-Xposed")
             put("loaderVersion", BuildConfig.VERSION_NAME)
 
-            for (module in pyonModules) {
+            for (module in schatModules) {
                 module.buildJson(this)
             }
         }
@@ -62,13 +71,15 @@ class Main : IXposedHookLoadPackage {
         var activity: Activity? = null
         val onActivityCreateCallback = mutableSetOf<(activity: Activity) -> Unit>()
 
-        XposedBridge.hookMethod(reactActivity.getDeclaredMethod("onCreate", Bundle::class.java), object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                activity = param.thisObject as Activity
-                onActivityCreateCallback.forEach { cb -> cb(activity) }
-                onActivityCreateCallback.clear()
-            }
-        })
+        XposedBridge.hookMethod(
+            reactActivity.getDeclaredMethod("onCreate", Bundle::class.java),
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    activity = param.thisObject as Activity
+                    onActivityCreateCallback.forEach { cb -> cb(activity) }
+                    onActivityCreateCallback.clear()
+                }
+            })
 
         init(lpparam) { cb ->
             if (activity != null) cb(activity)
@@ -79,10 +90,11 @@ class Main : IXposedHookLoadPackage {
     private fun init(
         param: XC_LoadPackage.LoadPackageParam,
         onActivityCreate: ((activity: Activity) -> Unit) -> Unit
-    ) = with (param) {
-        val catalystInstanceImpl = classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
+    ) = with(param) {
+        val catalystInstanceImpl =
+            classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
 
-        for (module in pyonModules) module.onInit(param)
+        for (module in schatModules) module.onInit(param)
 
         val loadScriptFromAssets = catalystInstanceImpl.getDeclaredMethod(
             "loadScriptFromAssets",
@@ -104,8 +116,8 @@ class Main : IXposedHookLoadPackage {
             String::class.java
         ).apply { isAccessible = true }
 
-        val cacheDir = File(appInfo.dataDir, "cache/pyoncord").apply { mkdirs() }
-        val filesDir = File(appInfo.dataDir, "files/pyoncord").apply { mkdirs() }
+        val cacheDir = File(appInfo.dataDir, "cache/schat").apply { mkdirs() }
+        val filesDir = File(appInfo.dataDir, "files/schat").apply { mkdirs() }
 
         val preloadsDir = File(filesDir, "preloads").apply { mkdirs() }
         val bundle = File(cacheDir, "bundle.js")
@@ -134,17 +146,17 @@ class Main : IXposedHookLoadPackage {
                     install(HttpTimeout) {
                         requestTimeoutMillis = if (bundle.exists()) 5000 else 10000
                     }
-                    install(UserAgent) { agent = "BunnyXposed" }
+                    install(UserAgent) { agent = "SChat-Xposed" }
                 }
 
-                val url = 
-                    if (config.customLoadUrl.enabled) config.customLoadUrl.url 
-                    else "https://raw.githubusercontent.com/pyoncord/detta-builds/main/bunny.min.js"
+                val url =
+                    if (config.customLoadUrl.enabled) config.customLoadUrl.url
+                    else "https://raw.githubusercontent.com/Soncresity-Industries/SChat-builds/main/schat.min.js"
 
-                Log.e("Bunny", "Fetching JS bundle from $url")
-                
+                Log.e("SChat", "Fetching JS bundle from $url")
+
                 val response: HttpResponse = client.get(url) {
-                    headers { 
+                    headers {
                         if (etag.exists() && bundle.exists()) {
                             append(HttpHeaders.IfNoneMatch, etag.readText())
                         }
@@ -154,8 +166,7 @@ class Main : IXposedHookLoadPackage {
                 bundle.writeBytes(response.body())
                 if (response.headers["Etag"] != null) {
                     etag.writeText(response.headers["Etag"]!!)
-                }
-                else if (etag.exists()) {
+                } else if (etag.exists()) {
                     // This is called when server does not return an E-tag, so clear em
                     etag.delete()
                 }
@@ -163,19 +174,19 @@ class Main : IXposedHookLoadPackage {
                 return@async
             } catch (e: RedirectResponseException) {
                 if (e.response.status != HttpStatusCode.NotModified) throw e
-                Log.e("Bunny", "Server responded with status code 304 - no changes to file")
+                Log.e("SChat", "Server responded with status code 304 - no changes to file")
             } catch (e: Throwable) {
                 onActivityCreate { activity ->
                     activity.runOnUiThread {
                         Toast.makeText(
                             activity.applicationContext,
-                            "Failed to fetch JS bundle, Bunny may not load!",
+                            "Failed to fetch JS bundle, SChat may not load!",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 }
 
-                Log.e("Bunny", "Failed to download bundle", e)
+                Log.e("SChat", "Failed to download bundle", e)
             }
         }
 
@@ -184,9 +195,9 @@ class Main : IXposedHookLoadPackage {
                 runBlocking { httpJob.join() }
 
                 XposedBridge.invokeOriginalMethod(
-                    setGlobalVariable, 
-                    param.thisObject, 
-                    arrayOf("__PYON_LOADER__", buildLoaderJsonString())
+                    setGlobalVariable,
+                    param.thisObject,
+                    arrayOf("__SCHAT_LOADER__", buildLoaderJsonString())
                 )
 
                 preloadsDir
@@ -194,15 +205,15 @@ class Main : IXposedHookLoadPackage {
                     .filter { it.isFile && it.extension == "js" }
                     .forEach { file ->
                         XposedBridge.invokeOriginalMethod(
-                            loadScriptFromFile, 
-                            param.thisObject, 
+                            loadScriptFromFile,
+                            param.thisObject,
                             arrayOf(file.absolutePath, file.absolutePath, param.args[2])
                         )
                     }
 
                 XposedBridge.invokeOriginalMethod(
-                    loadScriptFromFile, 
-                    param.thisObject, 
+                    loadScriptFromFile,
+                    param.thisObject,
                     arrayOf(bundle.absolutePath, bundle.absolutePath, param.args[2])
                 )
             }
@@ -214,13 +225,13 @@ class Main : IXposedHookLoadPackage {
         // Fighting the side effects of changing the package name
         if (packageName != "com.discord") {
             val getIdentifier = Resources::class.java.getDeclaredMethod(
-                "getIdentifier", 
+                "getIdentifier",
                 String::class.java,
                 String::class.java,
                 String::class.java
             )
 
-            XposedBridge.hookMethod(getIdentifier, object: XC_MethodHook() {
+            XposedBridge.hookMethod(getIdentifier, object : XC_MethodHook() {
                 override fun beforeHookedMethod(mhparam: MethodHookParam) = with(mhparam) {
                     if (args[2] == param.packageName) args[2] = "com.discord"
                 }

@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "io.github.pyoncord.xposed"
-    compileSdk = 35
+    namespace = "dev.soncresityindustries.schat.xposed"
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.pyoncord.xposed"
+        applicationId = "dev.soncresityindustries.schat.xposed"
         minSdk = 24
         targetSdk = 35
         versionCode = 300
-        versionName = "0.3.0"
+        versionName = "1.0.0-a1"
     }
 
     buildTypes {
@@ -41,9 +41,9 @@ android {
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
 
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
-    implementation("io.ktor:ktor-client-core:3.1.1")
-    implementation("io.ktor:ktor-client-cio:3.1.1")
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("io.ktor:ktor-client-core:3.5.2")
+    implementation("io.ktor:ktor-client-cio:3.5.2")
 }

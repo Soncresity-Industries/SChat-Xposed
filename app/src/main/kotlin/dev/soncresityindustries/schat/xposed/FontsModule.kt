@@ -1,31 +1,36 @@
 // credits to janisslsm from his PR: https://github.com/vendetta-mod/VendettaXposed/pull/17
 // hooks are modified function from RN codebase
 
-package io.github.pyoncord.xposed
+package dev.soncresityindustries.schat.xposed
 
 import android.content.res.AssetManager
-import android.os.Build
 import android.graphics.Typeface
 import android.graphics.Typeface.CustomFallbackBuilder
 import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
+import android.os.Build
 import android.util.Log
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.UserAgent
+import io.ktor.client.request.get
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.*
-import java.io.IOException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.put
 import java.io.File
-import kotlinx.coroutines.*
-
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.statement.*
-import io.ktor.client.plugins.*
-import io.ktor.http.*
+import java.io.IOException
 
 @Serializable
 data class FontDefinition(
@@ -35,7 +40,7 @@ data class FontDefinition(
     val main: Map<String, String>,
 )
 
-class FontsModule: PyonModule() {
+class FontsModule : SChatModule() {
     private val EXTENSIONS = arrayOf("", "_bold", "_italic", "_bold_italic")
     private val FILE_EXTENSIONS = arrayOf(".ttf", ".otf")
     private val FONTS_ASSET_PATH = "fonts/"
@@ -50,8 +55,9 @@ class FontsModule: PyonModule() {
         }
     }
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
-        XposedHelpers.findAndHookMethod("com.facebook.react.views.text.ReactFontManager", classLoader, "createAssetTypeface",
+    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
+        XposedHelpers.findAndHookMethod(
+            "com.facebook.react.views.text.ReactFontManager", classLoader, "createAssetTypeface",
             String::class.java,
             Int::class.java,
             "android.content.res.AssetManager", object : XC_MethodReplacement() {
@@ -63,15 +69,17 @@ class FontsModule: PyonModule() {
                 }
             })
 
-        val fontDefFile = File(appInfo.dataDir, "files/pyoncord/fonts.json")
+        val fontDefFile = File(appInfo.dataDir, "files/schat/fonts.json")
         if (!fontDefFile.exists()) return@with
 
         val fontDef = try {
             val json = Json { ignoreUnknownKeys = true }
             json.decodeFromString<FontDefinition>(fontDefFile.readText())
-        } catch (_: Throwable) { return@with }
+        } catch (_: Throwable) {
+            return@with
+        }
 
-        fontsDownloadsDir = File(appInfo.dataDir, "files/pyoncord/downloads/fonts").apply { mkdirs() }
+        fontsDownloadsDir = File(appInfo.dataDir, "files/schat/downloads/fonts").apply { mkdirs() }
         fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { mkdirs() }
         fontsAbsPath = fontsDir.absolutePath + "/"
 
@@ -80,7 +88,7 @@ class FontsModule: PyonModule() {
             if (!fileName.startsWith(".")) {
                 val fontName = fileName.split('.')[0]
                 if (fontDef.main.keys.none { it == fontName }) {
-                    Log.i("Bunny", "Deleting font file: $fileName")
+                    Log.i("SChat", "Deleting font file: $fileName")
                     file.delete()
                 }
             }
@@ -92,12 +100,13 @@ class FontsModule: PyonModule() {
                 async {
                     val url = fontDef.main.getValue(name)
                     try {
-                        Log.i("Bunny", "Downloading $name from $url")
-                        val file = File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}")
+                        Log.i("SChat", "Downloading $name from $url")
+                        val file =
+                            File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}")
                         if (file.exists()) return@async
 
                         val client = HttpClient(CIO) {
-                            install(UserAgent) { agent = "BunnyXposed" }
+                            install(UserAgent) { agent = "SChat-Xposed" }
                         }
 
                         val response: HttpResponse = client.get(url)
@@ -108,11 +117,11 @@ class FontsModule: PyonModule() {
 
                         return@async
                     } catch (e: Throwable) {
-                        Log.e("Bunny", "Failed to download fonts ($name from $url)", e)
+                        Log.e("SChat", "Failed to download fonts ($name from $url)", e)
                     }
                 }
             }.awaitAll()
-        } 
+        }
 
         return@with
     }
@@ -141,17 +150,21 @@ class FontsModule: PyonModule() {
 
                 for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filterNotNull()) {
                     for (fileExtension in FILE_EXTENSIONS) {
-                        val fileName = java.lang.StringBuilder()
+                        val fileName = StringBuilder()
                             .append(fontRootPath)
                             .append(fontFamilyName)
                             .append(fileExtension)
                             .toString()
                         try {
-                            val builder = if (fileName[0] == '/') Font.Builder(File(fileName)) else Font.Builder(assetManager, fileName)
+                            val builder =
+                                if (fileName[0] == '/') Font.Builder(File(fileName)) else Font.Builder(
+                                    assetManager,
+                                    fileName
+                                )
                             val font = builder.build()
                             val family = FontFamily.Builder(font).build()
                             fontFamilies.add(family)
-                        } catch (e: java.lang.RuntimeException) {
+                        } catch (e: RuntimeException) {
                             // If the typeface asset does not exist, try another extension.
                             continue
                         } catch (e: IOException) {
@@ -217,19 +230,19 @@ class FontsModule: PyonModule() {
         // getting the typeface.
         for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filterNotNull()) {
             for (fileExtension in FILE_EXTENSIONS) {
-                val fileName = java.lang.StringBuilder()
+                val fileName = StringBuilder()
                     .append(fontRootPath)
                     .append(fontFamilyName)
                     .append(extension)
                     .append(fileExtension)
                     .toString()
-                
+
                 return try {
                     if (fileName[0] == '/')
                         Typeface.createFromFile(fileName)
                     else
                         Typeface.createFromAsset(assetManager, fileName)
-                } catch (e: java.lang.RuntimeException) {
+                } catch (e: RuntimeException) {
                     // If the typeface asset does not exist, try another extension.
                     continue
                 }
