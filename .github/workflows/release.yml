@@ -9,7 +9,7 @@ on:
             versionCode:
                 required: true
                 description: This releases version code
-                default: "0001"
+                default: "100"
 
 permissions:
     contents: write
