@@ -9,7 +9,7 @@ on:
             versionCode:
                 required: true
                 description: This releases version code
-                default: "1000"
+                default: "0001"
 
 permissions:
     contents: write
@@ -21,10 +21,10 @@ jobs:
         -   name: Checkout
             uses: actions/checkout@master
     
-        -   name: Setup JDK 17
-            uses: actions/setup-java@v2
+        -   name: Setup JDK 25
+            uses: actions/setup-java@v5
             with:
-                java-version: 17
+                java-version: 25
                 distribution: 'temurin'
                 cache: 'gradle'
 
