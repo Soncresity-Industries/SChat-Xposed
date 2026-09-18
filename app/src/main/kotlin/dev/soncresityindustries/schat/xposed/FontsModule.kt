@@ -56,18 +56,22 @@ class FontsModule : SChatModule() {
     }
 
     override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
-        XposedHelpers.findAndHookMethod(
-            "com.facebook.react.views.text.ReactFontManager", classLoader, "createAssetTypeface",
-            String::class.java,
-            Int::class.java,
-            "android.content.res.AssetManager", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Typeface? {
-                    val fontFamilyName: String = param.args[0].toString()
-                    val style: Int = param.args[1] as Int
-                    val assetManager: AssetManager = param.args[2] as AssetManager
-                    return createAssetTypeface(fontFamilyName, style, assetManager)
-                }
-            })
+        try {
+            XposedHelpers.findAndHookMethod(
+                "com.facebook.react.views.text.ReactFontManager", classLoader, "createAssetTypeface",
+                String::class.java,
+                Int::class.java,
+                "android.content.res.AssetManager", object : XC_MethodReplacement() {
+                    override fun replaceHookedMethod(param: MethodHookParam): Typeface? {
+                        val fontFamilyName: String = param.args[0].toString()
+                        val style: Int = param.args[1] as Int
+                        val assetManager: AssetManager = param.args[2] as AssetManager
+                        return createAssetTypeface(fontFamilyName, style, assetManager)
+                    }
+                })
+        } catch (e: Throwable) {
+            Log.e("SChat", "Failed to hook ReactFontManager.createAssetTypeface: ${e.message}")
+        }
 
         val fontDefFile = File(appInfo.dataDir, "files/schat/fonts.json")
         if (!fontDefFile.exists()) return@with

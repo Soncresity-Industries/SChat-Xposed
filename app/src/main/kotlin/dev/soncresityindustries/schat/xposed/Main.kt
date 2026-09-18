@@ -106,24 +106,51 @@ class Main : IXposedHookLoadPackage {
         param: XC_LoadPackage.LoadPackageParam,
         onActivityCreate: ((activity: Activity) -> Unit) -> Unit
     ) = with(param) {
+        Log.e("SChat", "Entering init()...")
+        Log.e("SChat", "ClassLoader: $classLoader")
         try {
+            Log.e("SChat", "Checking for React Native presence...")
+            try {
+                classLoader.loadClass("com.facebook.react.ReactInstanceManager")
+                Log.e("SChat", "ReactInstanceManager found. RN is present.")
+            } catch (e: Throwable) {
+                Log.e("SChat", "ReactInstanceManager NOT found. RN classes might be in a different loader. (${e.javaClass.simpleName})")
+            }
+
+            Log.e("SChat", "Attempting to find React context class...")
             val contextClass = try {
-                classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
-            } catch (e: ClassNotFoundException) {
-                Log.e("SChat", "CatalystInstanceImpl not found, trying BridgelessReactContext...")
+                Log.e("SChat", "Trying CatalystInstanceImpl...")
+                de.robv.android.xposed.XposedHelpers.findClass("com.facebook.react.bridge.CatalystInstanceImpl", classLoader)
+            } catch (e: Throwable) {
+                Log.e("SChat", "CatalystInstanceImpl not found, trying BridgelessReactContext... (${e.javaClass.simpleName})")
                 try {
-                    classLoader.loadClass("com.facebook.react.bridge.BridgelessReactContext")
-                } catch (e2: ClassNotFoundException) {
-                    Log.e("SChat", "No suitable React context class found. Bundle hooks will be disabled.")
-                    null
+                    Log.e("SChat", "Trying BridgelessReactContext...")
+                    de.robv.android.xposed.XposedHelpers.findClass("com.facebook.react.bridge.BridgelessReactContext", classLoader)
+                } catch (e2: Throwable) {
+                    Log.e("SChat", "BridgelessReactContext not found, trying ReactContext... (${e2.javaClass.simpleName})")
+                    try {
+                        de.robv.android.xposed.XposedHelpers.findClass("com.facebook.react.bridge.ReactContext", classLoader)
+                    } catch (e3: Throwable) {
+                        Log.e("SChat", "No suitable React context class found. Bundle hooks will be disabled. (${e3.javaClass.simpleName})")
+                        null
+                    }
                 }
             }
 
-            for (module in schatModules) module.onInit(param)
+            Log.e("SChat", "Context class found: ${contextClass?.simpleName ?: "null"}")
+
+            for (module in schatModules) {
+                try {
+                    module.onInit(param)
+                } catch (e: Throwable) {
+                    Log.e("SChat", "Module ${module.javaClass.simpleName} failed onInit", e)
+                }
+            }
 
             if (contextClass == null) {
                 Log.e("SChat", "Skipping bundle hooks due to missing context class.")
             } else {
+                Log.e("SChat", "Applying bundle hooks...")
                 applyBundleHooks(contextClass, param, onActivityCreate)
             }
         } catch (e: Throwable) {
