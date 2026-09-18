@@ -192,18 +192,20 @@ class Main : IXposedHookLoadPackage {
 
         val patch = object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                runBlocking { httpJob.join() }
+                Log.e("SChat", "Before loading scripts")
 
                 XposedBridge.invokeOriginalMethod(
                     setGlobalVariable,
                     param.thisObject,
                     arrayOf("__SCHAT_LOADER__", buildLoaderJsonString())
                 )
+                Log.e("SChat", "Set global variable")
 
                 preloadsDir
                     .walk()
                     .filter { it.isFile && it.extension == "js" }
                     .forEach { file ->
+                        Log.e("SChat", "Loading preload: ${file.name}")
                         XposedBridge.invokeOriginalMethod(
                             loadScriptFromFile,
                             param.thisObject,
@@ -211,11 +213,13 @@ class Main : IXposedHookLoadPackage {
                         )
                     }
 
+                Log.e("SChat", "Loading main bundle: ${bundle.absolutePath}")
                 XposedBridge.invokeOriginalMethod(
                     loadScriptFromFile,
                     param.thisObject,
                     arrayOf(bundle.absolutePath, bundle.absolutePath, param.args[2])
                 )
+                Log.e("SChat", "Finished loading scripts")
             }
         }
 
